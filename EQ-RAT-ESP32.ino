@@ -9,107 +9,156 @@ See Readme.md
 
 */
  
+#include <WiFi.h>
+#include "BluetoothSerial.h"
+
 //Debug Stuff
-const bool debugEnabled=false;
+const bool debugEnabled=true;
 
 //Configuration
-const int Mount_Worm_Gear_Ratio=100;
+const int Mount_Worm_Gear_Ratio=130;
 const int Motor_Gear_Ratio=3;
 const int Steps_Per_Rev=400;
 const int Microstep_Setting=32;
 
+
 //Stuff for timer calc (doing everything as floats until its time to convert to timer)
 
 const float Seconds_Earth_Rotate=86164.09053;
-const float processorSpeed=16000000;
-
-
 float Earth_Seconds_Per_Degree =Seconds_Earth_Rotate / 360.0;
 float MicroSteps_Per_Degree =((float)Mount_Worm_Gear_Ratio * (float)Motor_Gear_Ratio *  (float)Steps_Per_Rev * (float)Microstep_Setting) / 360.0;
 float Step_Delay_Microseconds =(Earth_Seconds_Per_Degree / MicroSteps_Per_Degree) * 1000000.0;
 float Step_Delay_Timer_Half_Phase=Step_Delay_Microseconds / 2.0;
 
-float OCR1A_Calc_Value = ( 16000000.0 / (((1.0/(Step_Delay_Timer_Half_Phase)) * 1000000.0) * 8.0)) -1.0;
-unsigned int OCR1A_Value = round(OCR1A_Calc_Value);
+volatile long lastInterruptTime=0;
+volatile long currentInterruptTime=0;
 
-long lastTime=0;
-long currentTime=0;
+long lastLoopTime=0;
+long currentLoopTime=0;
 
 //Ra Stepper Config
-const int RAdirPin = 5;   
-const int RAstepPin = 2;    
+const int RAdirPin = 16;   
+const int RAstepPin = 25;    
 
 //Dec Stepper Config
-const int DECdirPin = 6;   
-const int DECstepPin = 3;    
+const int DECdirPin = 27;   
+const int DECstepPin = 17;    
 
 //Ra Stepper State
 uint8_t raStepState=LOW;
 
-// Generated with http://www.arduinoslovakia.eu/application/timer-calculator
-void setupTimer1() {
-  noInterrupts();
-  
-  // Clear registers
-  TCCR1A = 0;
-  TCCR1B = 0;
-  TCNT1 = 0;
+volatile uint8_t istracking=HIGH;
 
-  //EDIT THIS TO SET TIMER CORRECTLY  - See above
-  OCR1A=OCR1A_Value;
-  //OCR1A = 34519;
-  //EDIT THIS TO SET TIMER CORRECTLY - See above
+volatile int interruptCounter;
+int totalInterruptCounter;
+ 
+hw_timer_t * timer = NULL;
 
-  // CTC
-  TCCR1B |= (1 << WGM12);
-  // Prescaler 8
-  TCCR1B |= (1 << CS11);
-  // Output Compare Match A Interrupt Enable
-  TIMSK1 |= (1 << OCIE1A);
-  interrupts();
+portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
+
+#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
+#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
+#endif
+
+BluetoothSerial SerialBT;
+
+void timerCount(){
+  lastInterruptTime=currentInterruptTime;
+  currentInterruptTime=micros();
 }
 
-void setup() {  
-  
-  Serial.begin(9600);
-  Serial.println("Starting EQRAT");
-  Serial.println("--------------");
-  Serial.println("Timer Calc : " + String(OCR1A_Value));
-  //Setup Pins  
-  pinMode(RAstepPin, OUTPUT);   
-  pinMode(RAdirPin, OUTPUT);    
-  digitalWrite(RAdirPin, HIGH);   // invert this (HIGH) if wrong direction    
 
-  //Setup and start Timer
-  setupTimer1();
-    
-}   
-
-ISR(TIMER1_COMPA_vect) {
+ 
+void IRAM_ATTR onTimer() {
+  portENTER_CRITICAL_ISR(&timerMux);
+  //get set stuff
   
-  //Switch the step pin state
+ 
+ //Switch the step pin state
   if(raStepState==LOW){
     raStepState=HIGH;
   }
   else{
     raStepState=LOW;
   }
-
    //Write to the step pin
-   digitalWrite(RAstepPin, raStepState); 
+   if(istracking==HIGH)
+     digitalWrite(RAstepPin, raStepState); 
 
    //Do some counting if debug is enabled
    if(debugEnabled)
       timerCount();
+   
+   portEXIT_CRITICAL_ISR(&timerMux);
 }
 
-void timerCount(){
-  lastTime=currentTime;
-  currentTime=micros();
+// Generated with http://www.arduinoslovakia.eu/application/timer-calculator
+void setupTimer1() {
+  timer = timerBegin(0, 80, true);
+  timerAttachInterrupt(timer, &onTimer, true);
+  timerAlarmWrite(timer, Step_Delay_Timer_Half_Phase, true);
+  timerAlarmEnable(timer);
 }
+
+void flashLed(){
+  digitalWrite(14, HIGH);   // turn the LED on (HIGH is the voltage level)
+  delay(100);                       // wait for a second
+  digitalWrite(14, LOW);    // turn the LED off by making the voltage LOW
+  delay(100);       
+}
+
+void testRA(){
+   uint8_t state=LOW;
+   digitalWrite(RAdirPin, LOW);   // invert this (HIGH) if wrong direction    
+  for(int s=0;s<1000;s++){
+     if(state==LOW){
+        state=HIGH;
+     }
+     else{
+        state=LOW;
+     }
+     digitalWrite(RAstepPin, state); 
+     delay(10);
+  }
+   digitalWrite(RAdirPin, HIGH);   // invert this (HIGH) if wrong direction    
+   for(int s=0;s<1000;s++){
+     if(state==LOW){
+        state=HIGH;
+     }
+     else{
+        state=LOW;
+     }
+     digitalWrite(RAstepPin, state); 
+     delay(10);
+  }
+}
+
+void setup() {  
+  pinMode(14, OUTPUT);
+  WiFi.mode(WIFI_OFF);
+  Serial.begin(9600);
+  Serial.println("Starting EQRAT");
+  Serial.println("--------------");
+  Serial.println("Timer Calc : " + String(Step_Delay_Microseconds));
+  pinMode(RAstepPin, OUTPUT);   
+  pinMode(RAdirPin, OUTPUT);    
+  digitalWrite(RAdirPin, HIGH);   // invert this (HIGH) if wrong direction    
+  //Setup and start Timer
+  setupTimer1();
+  SerialBT.begin("EQ-RAT"); //Bluetooth device name
+  Serial.println("Bluetooth started, now you can pair!");
+  //testRA();
+ }   
+
+
 
 void loop() {  
-  //Spit out some debug stuff
-  if(debugEnabled)
-    Serial.println(String((currentTime-lastTime)*2));
+    portENTER_CRITICAL(&timerMux);
+    //get or sset shared stuff with core
+    portEXIT_CRITICAL(&timerMux);
+  if(debugEnabled){
+    Serial.print(String((currentInterruptTime-lastInterruptTime)*2));
+    Serial.println("");
+  } 
+  yield;
 }   
