@@ -1,6 +1,6 @@
 /*  
 # EQRAT-UNO
-##Simple Equatorial Mount Ra Sidereal Tracker for Arduino UNO/328
+## Simple Equatorial Mount Ra Sidereal Tracker for ESP32 Based Boards
 
 By Charles Gershom 
 @charlesgershom 
