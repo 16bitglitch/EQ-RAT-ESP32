@@ -13,7 +13,7 @@ See Readme.md
 #include "BluetoothSerial.h"
 
 //Debug Stuff
-const bool debugEnabled=true;
+const bool debugEnabled=false;
 
 //Configuration
 const int Mount_Worm_Gear_Ratio=130;
@@ -38,7 +38,7 @@ long currentLoopTime=0;
 
 //Ra Stepper Config
 const int RAdirPin = 16;   
-const int RAstepPin = 25;    
+const int RAstepPin = 26;    
 
 //Dec Stepper Config
 const int DECdirPin = 27;   
@@ -67,8 +67,6 @@ void timerCount(){
   currentInterruptTime=micros();
 }
 
-
- 
 void IRAM_ATTR onTimer() {
   portENTER_CRITICAL_ISR(&timerMux);
   //get set stuff
@@ -92,6 +90,8 @@ void IRAM_ATTR onTimer() {
    portEXIT_CRITICAL_ISR(&timerMux);
 }
 
+
+
 // Generated with http://www.arduinoslovakia.eu/application/timer-calculator
 void setupTimer1() {
   timer = timerBegin(0, 80, true);
@@ -110,44 +110,49 @@ void flashLed(){
 void testRA(){
    uint8_t state=LOW;
    digitalWrite(RAdirPin, LOW);   // invert this (HIGH) if wrong direction    
-  for(int s=0;s<1000;s++){
-     if(state==LOW){
-        state=HIGH;
-     }
-     else{
-        state=LOW;
-     }
-     digitalWrite(RAstepPin, state); 
-     delay(10);
-  }
+  for(int s=0;s<50000;s++){
+       digitalWrite(RAstepPin, HIGH); 
+       delayMicroseconds(10);
+       digitalWrite(RAstepPin, LOW); 
+       delayMicroseconds(10);
+        
+   
+  } 
+  
    digitalWrite(RAdirPin, HIGH);   // invert this (HIGH) if wrong direction    
-   for(int s=0;s<1000;s++){
-     if(state==LOW){
-        state=HIGH;
-     }
-     else{
-        state=LOW;
-     }
-     digitalWrite(RAstepPin, state); 
-     delay(10);
-  }
+   for(int s=0;s<50000;s++){
+       digitalWrite(RAstepPin, HIGH); 
+       delayMicroseconds(10);
+       digitalWrite(RAstepPin, LOW); 
+       delayMicroseconds(10);
+        
+   
+  } 
+     
+  
+  
 }
 
+
 void setup() {  
-  pinMode(14, OUTPUT);
+  
   WiFi.mode(WIFI_OFF);
-  Serial.begin(9600);
+  Serial.begin(115200);
   Serial.println("Starting EQRAT");
   Serial.println("--------------");
   Serial.println("Timer Calc : " + String(Step_Delay_Microseconds));
   pinMode(RAstepPin, OUTPUT);   
   pinMode(RAdirPin, OUTPUT);    
   digitalWrite(RAdirPin, HIGH);   // invert this (HIGH) if wrong direction    
-  //Setup and start Timer
-  setupTimer1();
+  
+  
   SerialBT.begin("EQ-RAT"); //Bluetooth device name
   Serial.println("Bluetooth started, now you can pair!");
-  //testRA();
+
+ // testRA();
+  
+  //Setup and start Timer
+  setupTimer1();
  }   
 
 
@@ -156,9 +161,6 @@ void loop() {
     portENTER_CRITICAL(&timerMux);
     //get or sset shared stuff with core
     portEXIT_CRITICAL(&timerMux);
-  if(debugEnabled){
-    Serial.print(String((currentInterruptTime-lastInterruptTime)*2));
-    Serial.println("");
-  } 
-  yield;
+  //  Serial.println(String((currentInterruptTime-lastInterruptTime)*2));
+  
 }   
