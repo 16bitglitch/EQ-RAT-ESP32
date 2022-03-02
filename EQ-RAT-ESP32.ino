@@ -10,12 +10,12 @@ See Readme.md
 */
  
 #include <WiFi.h>
-#include "BluetoothSerial.h"
+#include <BluetoothSerial.h>
 
 //Debug Stuff
 const bool debugEnabled=false;
 const unsigned long _ver = 100000;
-const string _appName = "EQ-RAT"
+const String _appName = "EQ-RAT";
 
 //Configuration
 const int Mount_Worm_Gear_Ratio=130;
@@ -134,7 +134,8 @@ void IRAM_ATTR onTimer() {
 
 
 // Generated with http://www.arduinoslovakia.eu/application/timer-calculator
-void setupTimer1() {
+void setupTimer1() {#
+
   timer = timerBegin(0, 80, true);
   timerAttachInterrupt(timer, &onTimer, true);
   timerAlarmWrite(timer, Step_Delay_Timer_Half_Phase, true);
@@ -210,10 +211,14 @@ void loop() {
     // discard blanks. Meade LX200 specs states :Sd and :Sr are
     // not followed by a blank but some implementation does include it.
     // also this allows aGoto commands to be typed with blanks
-    if (input[in] == ' ') return; 
+    if (input[in] == ' ') 
+        return; 
     
     // acknowledge LX200 ACK signal (char(6)) for software that tries to autodetect protocol (i.e. Stellarium Plus)
-    if (input[in] == char(6)) { SerialBT.print("P"); return; } // P = Polar
+    if (input[in] == char(6)) 
+    { 
+        SerialBT.print("P"); return; 
+    } // P = Polar
 
     if (input[in] == '#' || input[in] == '\n') { // after a # or a \n it is time to check what is in the buffer
        if (input[0] == ':') { // it's lx200 protocol
@@ -223,14 +228,17 @@ void loop() {
         // unknown command, print message only
         // if buffer contains more than one char
         // since stellarium seems to send extra #'s
-        if (in > 0) {
+        if (in > 0)
+        {
           String s = input;
           Serial.print(s.substring(0,in));
           Serial.println(" unknown. Expected lx200 commands");
         }
       }
       in = 0; // reset buffer // WARNING: the whole input buffer is passed anyway
-    } else {
+    } 
+    else 
+    {
       if (in++>20) in = 0; // prepare for next char or reset buffer if max lenght reached
     } 
   }
