@@ -19,7 +19,7 @@ const bool debugEnabled=false;
 const int Mount_Worm_Gear_Ratio=130;
 const int Motor_Gear_Ratio=3;
 const int Steps_Per_Rev=400;
-const int Microstep_Setting=32;
+const int Microstep_Setting=128;
 
 
 //Stuff for timer calc (doing everything as floats until its time to convert to timer)
@@ -42,7 +42,7 @@ const int RAstepPin = 26;
 
 //Dec Stepper Config
 const int DECdirPin = 27;   
-const int DECstepPin = 17;    
+const int DECstepPin = 25;    
 
 //Ra Stepper State
 uint8_t raStepState=LOW;
@@ -109,8 +109,8 @@ void flashLed(){
 
 void testRA(){
    uint8_t state=LOW;
-   digitalWrite(RAdirPin, LOW);   // invert this (HIGH) if wrong direction    
-  for(int s=0;s<50000;s++){
+   digitalWrite(RAdirPin, HIGH);   // invert this (HIGH) if wrong direction    
+  for(int s=0;s<5000;s++){
        digitalWrite(RAstepPin, HIGH); 
        delayMicroseconds(10);
        digitalWrite(RAstepPin, LOW); 
@@ -119,11 +119,30 @@ void testRA(){
    
   } 
   
-   digitalWrite(RAdirPin, HIGH);   // invert this (HIGH) if wrong direction    
-   for(int s=0;s<50000;s++){
+   digitalWrite(RAdirPin, LOW);   // invert this (HIGH) if wrong direction    
+   for(int s=0;s<5000;s++){
        digitalWrite(RAstepPin, HIGH); 
        delayMicroseconds(10);
        digitalWrite(RAstepPin, LOW); 
+       delayMicroseconds(10);
+        
+   
+  } 
+      digitalWrite(DECdirPin, HIGH);   // invert this (HIGH) if wrong direction    
+  for(int s=0;s<5000;s++){
+       digitalWrite(DECstepPin, HIGH); 
+       delayMicroseconds(10);
+       digitalWrite(DECstepPin, LOW); 
+       delayMicroseconds(10);
+        
+   
+  } 
+  
+   digitalWrite(DECdirPin, LOW);   // invert this (HIGH) if wrong direction    
+   for(int s=0;s<5000;s++){
+       digitalWrite(DECstepPin, HIGH); 
+       delayMicroseconds(10);
+       digitalWrite(DECstepPin, LOW); 
        delayMicroseconds(10);
         
    
@@ -143,13 +162,15 @@ void setup() {
   Serial.println("Timer Calc : " + String(Step_Delay_Microseconds));
   pinMode(RAstepPin, OUTPUT);   
   pinMode(RAdirPin, OUTPUT);    
-  digitalWrite(RAdirPin, HIGH);   // invert this (HIGH) if wrong direction    
-  
+  digitalWrite(RAdirPin, LOW);   // invert this (HIGH) if wrong direction    
+   pinMode(DECstepPin, OUTPUT);   
+  pinMode(DECdirPin, OUTPUT);    
+  digitalWrite(DECdirPin, LOW);   // invert this (HIGH) if wrong direction  
   
   SerialBT.begin("EQ-RAT"); //Bluetooth device name
   Serial.println("Bluetooth started, now you can pair!");
 
- // testRA();
+ testRA();
   
   //Setup and start Timer
   setupTimer1();
