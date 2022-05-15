@@ -38,7 +38,8 @@ long currentLoopTime=0;
 
 //Ra Stepper Config
 const int RAdirPin = 16;   
-const int RAstepPin = 26;    
+const int RAstepPin = 26;   
+
 
 //Dec Stepper Config
 const int DECdirPin = 27;   
@@ -107,7 +108,7 @@ void flashLed(){
   delay(100);       
 }
 
-void testRA(){
+void twitchMotors(){
    uint8_t state=LOW;
    digitalWrite(RAdirPin, HIGH);   // invert this (HIGH) if wrong direction    
   for(int s=0;s<5000;s++){
@@ -163,14 +164,14 @@ void setup() {
   pinMode(RAstepPin, OUTPUT);   
   pinMode(RAdirPin, OUTPUT);    
   digitalWrite(RAdirPin, LOW);   // invert this (HIGH) if wrong direction    
-   pinMode(DECstepPin, OUTPUT);   
+  pinMode(DECstepPin, OUTPUT);   
   pinMode(DECdirPin, OUTPUT);    
   digitalWrite(DECdirPin, LOW);   // invert this (HIGH) if wrong direction  
   
   SerialBT.begin("EQ-RAT"); //Bluetooth device name
   Serial.println("Bluetooth started, now you can pair!");
 
- testRA();
+  twitchMotors();
   
   //Setup and start Timer
   setupTimer1();
