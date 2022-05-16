@@ -22,6 +22,11 @@ const int Motor_Gear_Ratio=3;
 const int Steps_Per_Rev=400;
 const int Microstep_Setting=128;
 
+int RA_DIR   = LOW;         //inverted wirings or motor position change this
+int DEC_DIR  = LOW;         //inverted wirings or motor position change this
+
+
+const long NORTH_DEC   = 324000; // 90°
 
 //Stuff for timer calc (doing everything as floats until its time to convert to timer)
 
@@ -30,9 +35,24 @@ float Earth_Seconds_Per_Degree =Seconds_Earth_Rotate / 360.0;
 float MicroSteps_Per_Degree =((float)Mount_Worm_Gear_Ratio * (float)Motor_Gear_Ratio *  (float)Steps_Per_Rev * (float)Microstep_Setting) / 360.0;
 float Step_Delay_Microseconds =(Earth_Seconds_Per_Degree / MicroSteps_Per_Degree) * 1000000.0;
 float Step_Delay_Timer_Half_Phase=Step_Delay_Microseconds / 2.0;
+const float STEP_DELAY = Step_Delay_Microseconds;  
+
+const unsigned long MICROSTEPS_PER_HOUR  = MicroSteps_Per_Degree * 360 / 24;
+//const unsigned long MICROSTEPS_PER_HOUR  = (float)MicroSteps_Per_Degree * (float)360/ (float)23.93446959166667;
 
 volatile long lastInterruptTime=0;
 volatile long currentInterruptTime=0;
+const long DAY_SECONDS =  86400; // secs in a day
+unsigned int  SLOW_SPEED      = 128;      // RA&DEC slow motion speed (button press) - times the sidereal speed
+const    int  SLOW_SPEED_INC  = 4;      // Slow motion speed increment at +speed command
+
+unsigned long STEP_DELAY_SLEW = 20; // Slewing Pulse timing in micros (the higher the pulse, the slower the speed)
+                                        // don't change this to too low values otherwise your scope may take off as an helicopter
+// Vars to implement accelleration
+unsigned long MAX_DELAY      = 16383; // limit of delayMicroseconds() for Arduino Uno
+unsigned long decStepDelay   = MAX_DELAY; // initial pulse lenght (slow, to start accelleration)
+unsigned long decTargetDelay = STEP_DELAY/SLOW_SPEED; // pulse length to reach when Dec button is pressed
+unsigned int  decPlayIdx     = 0; // pulse index, Dec will accellerate for first 100 pulses
 
 long lastLoopTime=0;
 long currentLoopTime=0;
@@ -68,8 +88,8 @@ int  in = 0;        // current char in serial input
 // Serial Input (New) coords
 long inRA    = 0;
 long inDEC   = 0;
-
-const long NORTH_DEC   = 324000; // 90°
+long lastRA    = 0;
+long lastDEC   = 0;
 
 // Current coords in Secs (default to true north)
 long currRA  = 0;     
@@ -178,10 +198,10 @@ void setup() {
   Serial.println("Timer Calc : " + String(Step_Delay_Microseconds));
   pinMode(RAstepPin, OUTPUT);   
   pinMode(RAdirPin, OUTPUT);    
-  digitalWrite(RAdirPin, LOW);   // invert this (HIGH) if wrong direction    
+  digitalWrite(RAdirPin, RA_DIR);   // invert this (HIGH) if wrong direction    
   pinMode(DECstepPin, OUTPUT);   
   pinMode(DECdirPin, OUTPUT);    
-  digitalWrite(DECdirPin, LOW);   // invert this (HIGH) if wrong direction  
+  digitalWrite(DECdirPin, DEC_DIR);   // invert this (HIGH) if wrong direction  
   
   SerialBT.begin("EQ-RAT"); //Bluetooth device name
   Serial.println("Bluetooth started, now you can pair!");
@@ -194,8 +214,139 @@ void setup() {
   // lx200DEC[3] = char(223); // set correct char in string as per earlier specs - FIXME: this should not be needed anymores
  }   
 
+/*
+ *  Slew RA and Dec by seconds/arceconds (ra/dec)
+ *   motors direction is set according to sign
+ *   RA 1x direction is re-set at the end
+ *   microstepping is disabled for fast movements and (re-)enabled for finer ones
+ */
 int slewRaDecBySecs(long raSecs, long decSecs) {
-return 1;
+
+  // If more than 12h, turn from the opposite side
+  if (abs(raSecs) > DAY_SECONDS/2) { // reverse
+    printLog("RA reversed, RA secs:");
+    raSecs = raSecs+(raSecs>0?-1:1)*DAY_SECONDS;
+    printLogUL(raSecs);
+  }
+
+  
+  
+  // set directions
+  digitalWrite(RAdirPin,  (raSecs  > 0 ? RA_DIR :(RA_DIR ==HIGH?LOW:HIGH)));
+  digitalWrite(DECdirPin, (decSecs > 0 ? DEC_DIR:(DEC_DIR==HIGH?LOW:HIGH)));
+
+  // calculate how many micro-steps are needed
+  unsigned long raSteps  = (abs(raSecs) * MICROSTEPS_PER_HOUR) / 3600;
+  unsigned long decSteps = (abs(decSecs) * MicroSteps_Per_Degree) / 3600;
+
+
+  printLog(" RA uSteps:");
+  printLogUL(raSteps);
+  printLog(" DEC uSteps:");
+  printLogUL(decSteps);
+   
+   //move this to here since we only doing microsteps and still need to make sure its not taken too long
+  unsigned long slewTime = micros(); // record when slew code starts, RA 1x movement will be on hold hence we need to add the gap later on
+  slewRaDecBySteps(raSteps, decSteps);
+  printLog("uSteps Slew Done");
+
+  // If slewing took more than 5" (secs), adjust RA
+  slewTime = micros() - slewTime; // time elapsed for slewing
+  if ( slewTime > (5 * 1000000) ) {
+    printLog("* adjusting Ra by secs: ");
+    printLogUL(slewTime / 1000000);
+    slewRaDecBySecs(slewTime / 1000000, 0); // it's the real number of seconds!
+    // printLog("*** adjusting Ra done");
+  }
+
+  // reset RA to right sidereal direction
+  digitalWrite(RAdirPin,  RA_DIR);
+  
+  // Success
+  return 1;
+}
+
+ long raStepsToSecs(unsigned long raSteps){
+  if(RA_DIR==LOW){
+      return ( (raSteps * 3600)/MICROSTEPS_PER_HOUR )*1;
+  }
+  else{
+     return ( (raSteps * 3600)/MICROSTEPS_PER_HOUR )*-1;
+  }
+ }
+
+  long decStepsToSecs(unsigned long decSteps){
+  if(DEC_DIR==LOW){
+  return ( (decSteps * 3600)/MicroSteps_Per_Degree )*1;
+  }
+  else{
+     return ( (decSteps * 3600)/MicroSteps_Per_Degree )*-1;
+  }
+ }
+
+void slewRaDecBySteps(unsigned long raSteps, unsigned long decSteps) {
+  
+  unsigned long delaySlew = 0; 
+  unsigned long delayLX200Micros = 0; // mesure delay introduced by LX200 polling reply
+  in = 0; // reset the  input buffer read index
+  long newRA=currRA;
+  long newDEC=currDEC;
+  long raRunningCounter=0;
+  long decRunningCounter=0;
+  for (unsigned long i = 0; (i < raSteps || i < decSteps) ; i++) {
+   
+      delaySlew = STEP_DELAY_SLEW; // full speed
+
+      currRA=newRA+raStepsToSecs(i);
+      currDEC=newDEC+decStepsToSecs(i);
+     
+   
+    if (i < raSteps)  { digitalWrite(RAstepPin,  HIGH); }
+    if (i < decSteps) { digitalWrite(DECstepPin, HIGH); }
+   
+    delayMicroseconds(delaySlew);
+    
+    if (i < raSteps)  { digitalWrite(RAstepPin,  LOW);  }
+    if (i < decSteps) { digitalWrite(DECstepPin, LOW);  }
+    
+     delayMicroseconds(delaySlew);
+     
+      raRunningCounter++;
+      decRunningCounter++;
+      
+    // support LX200 polling while slewing
+     
+    if (SerialBT.available() > 0) {
+     
+      input[in] = SerialBT.read();
+      if (input[in] == '#' && in > 1 ) {
+        if (input[in-1] == 'R') { // :GR#
+            updateLx200Coords(currRA, currDEC); // recompute strings
+            printLog(lx200RA);
+            raRunningCounter=0;
+          SerialBT.print(lx200RA);
+          
+        } else if (input[in-1] == 'D') { // :GD#
+          updateLx200Coords(currRA, currDEC); // recompute strings
+             printLog(lx200DEC);
+             decRunningCounter=0;
+          SerialBT.print(lx200DEC);
+        } else if (input[in-1] == 'Q') { // :Q# stop FIXME: motors stops but current coordinates are set to new target...
+          printLog("Slew Stop");
+          break;
+        }
+        in = 0;
+      } else {
+        if (in++ >5) in = 0;
+      }
+      
+
+    } 
+   
+   
+  }
+
+
 }
 
  /* 
@@ -250,7 +401,9 @@ void lx200(String s) { // all :.*# commands are passed here
   } else if (s.charAt(1) == 'M') { // MOVE:  :MS# (slew), :Mx# (slow move)
     if (s.charAt(2) == 'S' ) { // SLEW
          printLog("---MOVE SLEW---");
-        printLog(s);
+        printLogL(inRA);
+        printLogL(inDEC);
+         printLog("-----");
       // assumes Sr and Sd have been processed hence
       // inRA and inDEC have been set, now it's time to move
       long deltaRaSecs  = currRA-inRA;
@@ -260,8 +413,9 @@ void lx200(String s) { // all :.*# commands are passed here
       SerialBT.print(0); // slew is possible 
        istracking=LOW;
       // slewRaDecBySecs replies to lx200 polling with current position until slew ends:
-      if (slewRaDecBySecs(deltaRaSecs, deltaDecSecs) == 1) { // success         
-        currRA  = inRA;
+      if (slewRaDecBySecs(deltaRaSecs, deltaDecSecs) == 1) { // success    
+          printLog("---DONE SLEW---");     
+       currRA  = inRA;
         currDEC = inDEC;
         updateLx200Coords(currRA, currDEC); // recompute strings
         
@@ -286,7 +440,7 @@ void lx200(String s) { // all :.*# commands are passed here
     printLog(s);
     // assumes Sr and Sd have been processed
     // sync current position with input
- 
+    
     currRA  = inRA;
     currDEC = inDEC;
     SerialBT.print("Synced#");
